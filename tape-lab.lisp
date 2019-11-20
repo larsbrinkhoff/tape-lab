@@ -13,6 +13,12 @@
 (defvar *tape* nil
   "A list of tape records, marks, and errors.")
 
+(defvar *endian* nil
+  "Little or big endian record length.")
+
+(defvar *tracks* nil
+  "Seven or nine track tape.")
+
 (defvar *source*)
 (defvar *index*)
 
@@ -28,6 +34,34 @@
          do (setf (aref image length) octet))
       (setq *image* image))))
 
+(defun seventrackp (frame)
+  (<= frame #o177))
+
+(defun guess (&optional (image *image*))
+  (let ((*source* image)
+        (*index* 0))
+    (setq *endian* :little)
+    (let ((l1 (read-length)))
+      (cond
+        ((< l1 10000)
+         (format t "~&Little endian~%"))
+        (t
+         (setq *endian* :big
+               *index* 0)
+         (setq l1 (read-length))
+         (if (< l1 10000)
+             (format t "~&Big endian~%")
+             (error "Unknown endian"))))
+      (let ((record (read-data l1)))
+        (if (every #'seventrackp record)
+            (progn (setq *tracks* 7) (format t "~&7-track~%"))
+            (progn (setq *tracks* 9) (format t "~&9-track~%"))))
+      (ecase *tracks*
+        (7 (when (eq l1 (* 7 1024))
+             (format t "~&ITS DUMP~%")))
+        (9 (when (eq l1 (* 5 1024))
+             (format t "~&ITS DUMP~%")))))))
+               
 (defun files (&optional (tape *tape*))
   (let ((file nil)
         (files nil))
@@ -73,15 +107,15 @@
                  (read-frame)
                  (read-frame)
                  (read-frame))))
-    (if nil
-        (+ (ash (fourth l) 24)
-           (ash (third l) 16)
-           (ash (second l) 8)
-           (first l))
-        (+ (ash (first l) 24)
-           (ash (second l) 16)
-           (ash (third l) 8)
-           (fourth l)))))
+    (ecase *endian*
+      (:little  (+ (ash (fourth l) 24)
+                   (ash (third l) 16)
+                   (ash (second l) 8)
+                   (first l)))
+      (:big     (+ (ash (first l) 24)
+                   (ash (second l) 16)
+                   (ash (third l) 8)
+                   (fourth l))))))
 
 (defun read-record ()
   (if (eql *index* (length *source*))
